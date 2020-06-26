@@ -1,0 +1,143 @@
+---
+title: "Titanic Dataset - Analysis"
+author: "Riccardo Finotello"
+date: "26/06/2020"
+output: 
+    html_document:
+        keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE, comment="")
+```
+
+## Dataset
+
+```{r dataset.load}
+library(titanic)
+train <- titanic_train
+```
+
+In this analysis we consider the famous _Titanic_ dataset holding survival data of passengers of the renowned ship. The training set which we use for inference is made of `r nrow(train)` rows and `r ncol(train)` columns.
+
+The names of the columns are
+```{r dataset.columns, comment = ""}
+names(train)
+```
+We will however only use a subset of it for training as detailed later.
+
+The goal of the analysis will be to train an algorithm capable of predicting the survival status of a person, given its characteristics.
+
+## Exploratory Data Analysis
+
+In this section we explore the dataset, starting by taking a look at the partition of survived and deceased passengers. First of all we want to be sure that there are no missing values in the prediction labels: we therefore compute the fraction of missing values in the columns _Survived_ which leads to `r sum(is.na(train$Survived))` fraction of incomplete cases. We can then show the distribution of the survived cases:
+```{r eda.survived}
+library(plotly)
+library(ggplot2)
+survived.data <- train %>%
+                 summarise(status = factor(Survived,
+                                           labels=c("deceased", "survived")
+                                          )
+                          )
+survived.plot <- ggplot(survived.data, aes(x=status, fill=status)) +
+                 geom_bar() +
+                 ggtitle("Survived and Deceased Passengers")
+ggplotly(survived.plot)
+```
+
+In this case the classes are not heavily imbalanced, even though there is a prominent prevalence of the _deceased_ label.
+
+In this analysis we will only be interested in predictions based on sex, cabin class and age, given the final goal of creating a simple Shiny web app where users can input such data:
+```{r eda.remove}
+train <- train[,c(2,3,5,6)]
+train$Survived <- as.factor(train$Survived)
+train$Pclass <- as.factor(train$Pclass)
+train$Sex <- as.factor(train$Sex)
+train$Age <- as.numeric(train$Age)
+```
+
+For the same reason, we also select only people aged 1 or more:
+```{r eda.remove.age}
+train <- train %>% filter(Age >= 1)
+train$Age <- as.integer(train$Age)
+```
+
+We finally show the distribution of the several labels grouped by different variables:
+```{r eda.distr}
+library(gridExtra)
+survived.data <- train %>%
+                 mutate(status = factor(Survived,
+                                           labels=c("deceased", "survived")
+                                          )
+                          )
+class.plot <- ggplot(survived.data, aes(x=status, fill=Pclass)) +
+              geom_bar() +
+              xlab("") +
+              ylab("") +
+              facet_grid(. ~ Pclass)
+ggplotly(class.plot)
+```
+
+The plot in fact shows that more 1st class passenger were saved than lost with respect to the other classes.
+
+We can also take a look at the partition per sex:
+```{r eda.distr.sex}
+sex.plot <- ggplot(survived.data, aes(x=status, fill=Sex)) +
+            geom_bar() +
+            xlab("") +
+            ylab("") +
+            facet_grid(. ~ Sex)
+ggplotly(sex.plot)
+```
+
+And the plot per age cut into 4 different bins:
+```{r eda.distr.age}
+survived.data <- survived.data %>%
+                 mutate(age.group=cut(Age, breaks=3, right=FALSE))
+age.plot <- ggplot(survived.data, aes(x=status, fill=age.group)) +
+            geom_bar() +
+            xlab("") +
+            ylab("") +
+            facet_grid(. ~ age.group)
+ggplotly(age.plot)
+```
+
+## Predictions
+
+We finally try to predict the outcome based on the information. We use a generalised linear model to predict the probability of survival (i.e. we use a logistic regression to extract probabilities). We first divide the training set into an effective training and a test set holding 20% of the original dataset.
+```{r train.test}
+library(caret)
+set.seed(42)
+
+# shuffle and prepare partitions
+train     <- train[sample(nrow(train)),]
+partition <- createDataPartition(train$Survived, p=0.8, list=FALSE)
+set.train <- train[partition,]
+set.test  <- train[-partition,]
+```
+
+We then train a logistic regression using the _caret_ package using 5-fold cross-validation:
+```{r logit}
+log.reg <- train(Survived ~ .,
+                 data=set.train,
+                 trControl=trainControl(method="cv", number=10),
+                 method="glm",
+                 family="binomial"
+                )
+```
+
+Finally we look at the metrics of the fit (it cannot be good since too many variables were taken out of the predictions):
+```{r metrics}
+confusionMatrix(log.reg, mode="everything")
+```
+
+We finally make predictions on the test set:
+```{r predict}
+predictions <- predict(log.reg, newdata=set.test)
+confusionMatrix(predictions, set.test$Survived, mode="everything")
+```
+
+We finally save the model and proceed to build the web app.
+```{r save.model}
+saveRDS(log.reg, file="log.reg.rds")
+```

@@ -1,0 +1,12 @@
+name: TitanicSurvival
+title: TitanicSurvival
+username:
+account: thesfinox
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2508827
+bundleId: 3321177
+url: https://thesfinox.shinyapps.io/TitanicSurvival/
+when: 1593206430.08906
+asMultiple: FALSE
+asStatic: FALSE
